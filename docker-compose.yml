@@ -1,0 +1,9 @@
+version: '2.1'
+services:
+  betserver:
+    image: sstrakh/betserver
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    ports:
+      - 2222:2222
