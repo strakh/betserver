@@ -12,9 +12,12 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <strings.h>
 //#include <sys/fcntl.h>
 #include <sys/select.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
@@ -71,7 +74,7 @@ int get_client_index_by_id(int unique_id)
 }
 
 /** returns client index for unique id, -1 if not found */
-int get_client_index_by_sockerfd(int socket)
+int get_client_index_by_socketfd(int socket)
 {
   for (int i=0; i<BETSERVER_NUM_CLIENTS; ++i)
   {
@@ -80,8 +83,8 @@ int get_client_index_by_sockerfd(int socket)
   return -1;
 }
 
-/** returns client unique id for socker fd, -1 if not found */
-int get_client_uniqueid_by_sockerfd(int socket)
+/** returns client unique id for socket fd, -1 if not found */
+int get_client_uniqueid_by_socketfd(int socket)
 {
   for (int i=0; i<BETSERVER_NUM_CLIENTS; ++i)
   {
@@ -122,7 +125,7 @@ int create_client(int socket_fd)
     new_id = generate_unique_id();
   }
   clients[index].unique_id = new_id;
-  printf("new client %d created for socker %d at index %d\n", new_id, socket_fd, index);
+  printf("new client %d created for socket %d at index %d\n", new_id, socket_fd, index);
   printf("active clients: %d\n", count_active_clients());
   return new_id;
 }
@@ -153,7 +156,7 @@ int remove_client_by_index(int index)
 
 int remove_client_by_socketfd(int socket)
 {
-  int index = get_client_index_by_sockerfd(socket);
+  int index = get_client_index_by_socketfd(socket);
   if (-1 == index) return -1;
   return remove_client_by_index(index);
 }
@@ -167,7 +170,7 @@ int remove_client(int unique_id)
 
 int handle_socket_message(int socket_fd, char* buffer, size_t size)
 {
-  int uid = get_client_uniqueid_by_sockerfd(socket_fd);
+  int uid = get_client_uniqueid_by_socketfd(socket_fd);
   if (-1 == uid) return -1;
   unsigned int bet = atoi(buffer);
   if (bet < BETSERVER_NUM_MIN || bet > BETSERVER_NUM_MAX)
@@ -203,6 +206,7 @@ unsigned int roll_the_dice()
 }
 
 int main(int argc, const char * argv[]) {
+  puts("Betserver started.");
   struct sigaction action;
   bzero(&action, sizeof(struct sigaction));
   action.sa_handler = term;
@@ -250,11 +254,11 @@ int main(int argc, const char * argv[]) {
   {
     error("socket:listen failed");
   }
-  int yes = 1;
-  if(setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
-  {
-    error("setsockopt failed");
-  }
+//  int yes = 1;
+//  if(setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+//  {
+//    error("setsockopt failed");
+//  }
 
 //  set_nonblock(listen_socket);
   
@@ -263,10 +267,6 @@ int main(int argc, const char * argv[]) {
   /* keep track of the biggest file descriptor */
   fdmax = listen_socket; /* so far, it's this one*/
   
-  /** set timeout for select() */
-  struct timeval select_timeout;
-  select_timeout.tv_usec = BETSERVER_TICK_MS * 1000;
-
   /** save current time for later use */
   time_t previous_time;
   time(&previous_time);
@@ -277,48 +277,51 @@ int main(int argc, const char * argv[]) {
     time_t current_time;
     time(&current_time);
     double seconds = difftime(current_time, previous_time);
-    if (seconds >= BETSERVER_BET_PERIOD && count_betting_clients() > 0)
+    if (seconds >= BETSERVER_BET_PERIOD)
     {
       printf("%.1f sec passed\n", seconds);
-      winner = roll_the_dice();
-      printf("winner is %u\n", winner);
       previous_time = current_time;
-      
-      /* we got winner send it */
-      for(int j = 0; j <= fdmax; j++)
+      if (count_betting_clients() > 0)
       {
-        /* send to everyone! */
-        if(FD_ISSET(j, &master) && (j != listen_socket))
+        winner = roll_the_dice();
+        printf("winner is %u\n", winner);
+
+        /* we got winner send it */
+        for(int j = 0; j <= fdmax; j++)
         {
-          char win[50];
-          sprintf(win, "winner is %u\n", winner);
-          if(send(j, win, strlen(win), 0) == -1)
+          /* send to everyone! */
+          if(FD_ISSET(j, &master) && (j != listen_socket))
           {
-            perror("send failed");
-          }
-          /* forget client */
-          int index = get_client_index_by_sockerfd(j);
-          if (-1 == index)
-          {
-            close(j);
-            FD_CLR(j, &master);
-          }
-          else
-          {
-            if(clients[index].bet_done)
+            char win[50];
+            sprintf(win, "winner is %u\n", winner);
+            if(send(j, win, strlen(win), 0) == -1)
             {
-              if(clients[index].bet == winner)
-              {
-                printf("client %d has won\n", clients[index].unique_id);
-                char* msg = "You have won!\n";
-                if(send(j, msg, strlen(msg), 0) == -1)
-                {
-                  perror("send failed");
-                }
-              }
-              remove_client_by_index(index);
+              perror("send failed");
+            }
+            /* forget client */
+            int index = get_client_index_by_socketfd(j);
+            if (-1 == index)
+            {
               close(j);
               FD_CLR(j, &master);
+            }
+            else
+            {
+              if(clients[index].bet_done)
+              {
+                if(clients[index].bet == winner)
+                {
+                  printf("client %d has won\n", clients[index].unique_id);
+                  char* msg = "You have won!\n";
+                  if(send(j, msg, strlen(msg), 0) == -1)
+                  {
+                    perror("send failed");
+                  }
+                }
+                remove_client_by_index(index);
+                close(j);
+                FD_CLR(j, &master);
+              }
             }
           }
         }
@@ -327,6 +330,12 @@ int main(int argc, const char * argv[]) {
     
     /* copy it */
     read_fds = master;
+
+    /** set timeout for select() */
+    struct timeval select_timeout;
+    bzero(&select_timeout, sizeof(select_timeout));
+    select_timeout.tv_usec = BETSERVER_TICK_MS * 1000;
+
     int selected = 0;
     selected = select(fdmax+1, &read_fds, NULL, NULL, &select_timeout);
     if(selected == -1)
@@ -346,6 +355,7 @@ int main(int argc, const char * argv[]) {
         {
           int client_socket;
           struct sockaddr_in client_addr;
+          bzero(&client_addr, sizeof(client_addr));
           socklen_t addrlen=sizeof(client_addr);
           
           /** accept an incomming connection  */
