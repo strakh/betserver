@@ -207,6 +207,7 @@ unsigned int roll_the_dice()
 
 int main(int argc, const char * argv[]) {
   puts("Betserver started.");
+  fflush(stdout);
   struct sigaction action;
   bzero(&action, sizeof(struct sigaction));
   action.sa_handler = term;
@@ -295,6 +296,9 @@ int main(int argc, const char * argv[]) {
             char win[50];
             sprintf(win, "winner is %u\n", winner);
             if(send(j, win, strlen(win), 0) == -1)
+//            char buffer[sizeof(winner)];
+//            *buffer = winner;
+//            if(send(j, (const char*) &winner, sizeof(winner), 0) == -1)
             {
               perror("send failed");
             }
@@ -411,6 +415,7 @@ int main(int argc, const char * argv[]) {
         }
       }
     }
+    fflush(stdout);
   }
   
   /** Clean up */
