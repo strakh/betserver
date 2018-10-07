@@ -275,6 +275,7 @@ int main(int argc, const char * argv[]) {
   /** Server runs till SIGTERM */
   while (!done)
   {
+    fflush(stdout);
     time_t current_time;
     time(&current_time);
     double seconds = difftime(current_time, previous_time);
@@ -415,7 +416,6 @@ int main(int argc, const char * argv[]) {
         }
       }
     }
-    fflush(stdout);
   }
   
   /** Clean up */
