@@ -384,7 +384,11 @@ static int check_updated_sockets(fd_set *sockets, fd_set *sockets_updated, int s
   select_timeout.tv_usec = BETSERVER_TICK_MS * 1000;
 
   /* copy open sockets */
+#ifndef FD_COPY
+  sockets_updated = sockets;
+#else
   FD_COPY(sockets, sockets_updated);
+#endif
   /* get updated sockets */
   int selected = select(sockets_size+1, sockets_updated, NULL, NULL, &select_timeout);
   if(selected == -1)
