@@ -1,0 +1,18 @@
+RUN Betserver
+
+`docker-compose pull`
+`docker-compose up`
+
+Run Tests against it
+
+`./test.sh`
+
+Build Betserver locally
+
+- open with XCode and build
+- or from command line in Linux `gcc -o betserver main.c` (gcc >= 5)
+
+Notes:
+- only BETSERVER_OPEN and BETSERVER_BET message types are implemented
+- server replies are still plain text.
+- code is missing reorganisation into multiple files, it's currently in one .c file for build simplicity.
