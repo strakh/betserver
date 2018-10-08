@@ -25,6 +25,7 @@
 /* Begin PBXFileReference section */
 		9A77AFC421615F210093DA1A /* betserver */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = betserver; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A77AFC721615F210093DA1A /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
+		9A77AFCE216A63CC0093DA1A /* protocol.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = protocol.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -58,6 +59,7 @@
 			isa = PBXGroup;
 			children = (
 				9A77AFC721615F210093DA1A /* main.c */,
+				9A77AFCE216A63CC0093DA1A /* protocol.h */,
 			);
 			path = betserver;
 			sourceTree = "<group>";

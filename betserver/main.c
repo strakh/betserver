@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 //#include <sys/fcntl.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -22,12 +21,15 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "protocol.h"
+
 #define BETSERVER_PORT 2222
 #define BETSERVER_MESSAGE_SIZE_MAX 31
+#define BETSERVER_MESSAGE_HEADER_SIZE sizeof(unsigned int)
 
 #define BETSERVER_NUM_CLIENTS 40
-#define BETSERVER_NUM_MIN 3 //0xe0ffff00
-#define BETSERVER_NUM_MAX 6 //0xe0ffffaa
+#define BETSERVER_NUM_MIN 0xe0ffff00
+#define BETSERVER_NUM_MAX 0xe0ffffaa
 #define BETSERVER_CLIENT_ID_MAX 0xffff //65535
 #define BETSERVER_BET_PERIOD 15
 #define BETSERVER_TICK_MS 100
@@ -168,11 +170,14 @@ int remove_client(int unique_id)
   return remove_client_by_index(index);
 }
 
-int handle_socket_message(int socket_fd, char* buffer, size_t size)
+int handle_bet_message(int socket_fd, char* buffer, size_t size)
 {
   int uid = get_client_uniqueid_by_socketfd(socket_fd);
   if (-1 == uid) return -1;
-  unsigned int bet = atoi(buffer);
+  if (size != sizeof(int)) return -1;
+  unsigned int* b = (unsigned int*) buffer;
+  unsigned int bet = ntohl(*b);
+  printf("got %u\n", bet);
   if (bet < BETSERVER_NUM_MIN || bet > BETSERVER_NUM_MAX)
   {
     remove_client(uid);
@@ -268,9 +273,6 @@ void handle_winner(const unsigned int winner, const int listen_socket, fd_set* s
       char win[50];
       sprintf(win, "winner is %u\n", winner);
       if(send(j, win, strlen(win), 0) == -1)
-//      char buffer[sizeof(winner)];
-//      *buffer = winner;
-//      if(send(j, (const char*) &winner, sizeof(winner), 0) == -1)
       {
         perror("send failed");
       }
@@ -303,10 +305,33 @@ void handle_winner(const unsigned int winner, const int listen_socket, fd_set* s
   }
 }
 
+size_t recv_msg(int i, void* buffer, size_t size, fd_set* sockets)
+{
+  size_t nbytes;
+  if((nbytes = recv(i, buffer, size, 0)) <= 0)
+  {
+    /* got error or connection closed by client */
+    if(nbytes == 0)
+    /* connection closed */
+      printf("socket %d hung up\n", i);
+    else
+      perror("recv failed");
+
+    /* close it... */
+    close(i);
+    /* remove from master set */
+    FD_CLR(i, sockets);
+    /* forget client */
+    remove_client_by_socketfd(i);
+  }
+  return nbytes;
+}
+
 void handle_updated_sockets(fd_set* sockets, const fd_set* sockets_updated, int* sockets_size, const int listen_socket)
 {
   /* message buffer */
   char buffer[BETSERVER_MESSAGE_SIZE_MAX];
+  bzero(buffer, BETSERVER_MESSAGE_SIZE_MAX);
   printf("sockets size: %d\n", *sockets_size);
 
   for(int i = 0; i <= *sockets_size; i++)
@@ -345,31 +370,33 @@ void handle_updated_sockets(fd_set* sockets, const fd_set* sockets_updated, int*
       else
       {
         /* handle data from a client */
-        size_t nbytes;
-        if((nbytes = recv(i, buffer, sizeof(buffer), 0)) <= 0)
+        unsigned int header = 0;
+        size_t nbytes = recv_msg(i, &header, BETSERVER_MESSAGE_HEADER_SIZE, sockets);
+        if(nbytes > 0)
         {
-          /* got error or connection closed by client */
-          if(nbytes == 0)
-          /* connection closed */
-            printf("socket %d hung up\n", i);
-          else
-            perror("recv failed");
-
-          /* close it... */
-          close(i);
-          /* remove from master set */
-          FD_CLR(i, sockets);
-          /* forget client */
-          remove_client_by_socketfd(i);
-        }
-        else
-        {
-          if (-1 == handle_socket_message(i, buffer, nbytes))
+          struct msg_header message_header = parse_message_header(ntohl(header));
+          unsigned int extra_message_size = message_header.size - BETSERVER_MESSAGE_HEADER_SIZE;
+          if (message_header.type == BETSERVER_OPEN && 0 == extra_message_size) continue;
+          if (message_header.type == BETSERVER_BET && extra_message_size > 0)
           {
-            /* close it... */
+            nbytes = recv_msg(i, &buffer, extra_message_size, sockets);
+            if(nbytes > 0)
+            {
+              if (-1 == handle_bet_message(i, buffer, nbytes))
+              {
+                {
+                  close(i);
+                  FD_CLR(i, sockets);
+                  remove_client_by_socketfd(i);
+                }
+              }
+            }
+          }
+          else
+          {
             close(i);
-            /* remove from master set */
             FD_CLR(i, sockets);
+            remove_client_by_socketfd(i);
           }
         }
       }
@@ -385,7 +412,7 @@ static int check_updated_sockets(fd_set *sockets, fd_set *sockets_updated, int s
 
   /* copy open sockets */
 #ifndef FD_COPY
-  sockets_updated = sockets;
+  *sockets_updated = *sockets;
 #else
   FD_COPY(sockets, sockets_updated);
 #endif
