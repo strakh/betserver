@@ -1,1 +1,3 @@
 betserver.xcodeproj/xcuserdata
+.idea
+*.pyc
